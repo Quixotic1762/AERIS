@@ -1,0 +1,11 @@
+# Versions tested with Python 3.14 on 2026-10-18.
+paho-mqtt>=2.0,<3
+dash==4.4.1
+plotly==7.1.0
+PyYAML==6.0.3
+
+# Optional: offline analysis of recorded CSV files
+pandas
+
+# Tests
+pytest

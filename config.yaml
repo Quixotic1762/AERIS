@@ -1,0 +1,26 @@
+# AERIS dashboard configuration.
+# Every key is optional; missing keys use the defaults in dashboard/config.py.
+
+mqtt:
+  host: localhost            # broker address as seen from THIS computer
+  port: 1883
+  username: aeris            # set to null if the broker allows anonymous clients
+  password: aeris 
+  client_id: aeris-dashboard
+  topic_prefix: aeris        # subscribes to aeris/# ; commands go to aeris/command
+  keepalive_s: 30
+
+dashboard:
+  host: 127.0.0.1            # 0.0.0.0 to reach the dashboard from other machines
+  port: 8050
+  refresh_ms: 250            # readouts / diagnostics update period
+  plot_refresh_ms: 500       # plot redraw period (does not affect recording)
+  window_s: 60               # rolling plot window, device seconds
+  max_points: 6000           # live buffer size (records); bounds memory
+  max_plot_points: 1500      # per trace; plots are thinned above this, CSV never is
+  stale_timeout_s: 2.0       # no telemetry for this long -> STALE
+
+recorder:
+  data_dir: data             # relative paths are relative to the project root
+  flush_interval_s: 1.0
+  queue_size: 50000          # records waiting to be written; overflow is counted

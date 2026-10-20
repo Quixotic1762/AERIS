@@ -24,6 +24,7 @@
  */
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
+#include <SoftwareSerial.h>
 
 #include "config.h"
 
@@ -33,12 +34,14 @@
 #define EVENT_QUEUE_LEN     8
 #define MQTT_BUFFER_SIZE    (MAX_FRAME + 128)
 
-#if DEBUG_ENABLED && USE_SERIAL_SWAP
-#define DBG(...) Serial1.printf(__VA_ARGS__)
+#if DEBUG_ENABLED
+#define DBG(...) dbg.printf(__VA_ARGS__)
 #else
 #define DBG(...) do { } while (0)
 #endif
 
+#define link Serial            /* STM32 link: hardware UART0 on D7/D8 */
+static SoftwareSerial dbg;     /* debug log: TX-only on GPIO1 -> USB */
 static WiFiClient   net;
 static PubSubClient mqtt(net);
 
@@ -89,9 +92,9 @@ static void link_send(char kind, const char *payload, size_t len)
 
     /* ESP->STM32 traffic is small (heartbeat ~60 B/s, rare commands), so a
      * brief wait on the 128-byte TX FIFO is acceptable (<= ~25 ms). */
-    Serial.write((const uint8_t *)head, sizeof head);
-    Serial.write((const uint8_t *)payload, len);
-    Serial.write((const uint8_t *)tail, sizeof tail);
+    link.write((const uint8_t *)head, sizeof head);
+    link.write((const uint8_t *)payload, len);
+    link.write((const uint8_t *)tail, sizeof tail);
 }
 
 static void send_heartbeat()
@@ -210,8 +213,11 @@ static void handle_frame()
 static void link_poll()
 {
     /* Bounded so MQTT keep-alives still get serviced during floods. */
-    for (int budget = 2048; budget > 0 && Serial.available() > 0; budget--) {
-        char ch = (char)Serial.read();
+    if (link.hasOverrun()) {
+        DBG("link: rx overflow, bytes lost\r\n");
+    }
+    for (int budget = 2048; budget > 0 && link.available() > 0; budget--) {
+        char ch = (char)link.read();
 
         if (ch == '$') {
             if (rx_in_frame && !rx_discarding) {
@@ -273,7 +279,7 @@ static void on_mqtt_message(char *topic, byte *payload, unsigned int length)
     }
     link_send('C', (const char *)payload, length);
     commands_forwarded++;
-    DBG("cmd -> stm32: %.*s\n", (int)length, (const char *)payload);
+    DBG("cmd -> stm32: %.*s\r\n", (int)length, (const char *)payload);
 }
 
 static size_t build_esp_status(char *buf, size_t cap, bool online)
@@ -324,7 +330,7 @@ static void mqtt_maintain(uint32_t now)
     static const char will[] =
         "{\"schema_version\":1,\"source\":\"esp8266\",\"device_id\":\"" DEVICE_ID "\",\"online\":false}";
 
-    DBG("mqtt: connecting to %s:%d ...\n", MQTT_HOST, MQTT_PORT);
+    DBG("mqtt: connecting to %s:%d ...\r\n", MQTT_HOST, MQTT_PORT);
     const char *user = (strlen(MQTT_USER) > 0) ? MQTT_USER : nullptr;
     const char *pass = (strlen(MQTT_USER) > 0) ? MQTT_PASSWORD : nullptr;
     bool ok = mqtt.connect(MQTT_CLIENT_ID, user, pass, TOPIC_ESP_STATUS, 1, true, will);
@@ -333,12 +339,12 @@ static void mqtt_maintain(uint32_t now)
         mqtt_connects++;
         mqtt_backoff_ms = MQTT_RETRY_MIN_MS;
         mqtt.subscribe(TOPIC_COMMAND, 0);
-        DBG("mqtt: connected\n");
+        DBG("mqtt: connected\r\n");
         publish_esp_status();
         flush_held();
         send_heartbeat();   /* tell the STM32 right away */
     } else {
-        DBG("mqtt: failed, state=%d, retry in %lu ms\n", mqtt.state(), (unsigned long)mqtt_backoff_ms);
+        DBG("mqtt: failed, state=%d, retry in %lu ms\r\n", mqtt.state(), (unsigned long)mqtt_backoff_ms);
         next_mqtt_try_ms = now + mqtt_backoff_ms;
         mqtt_backoff_ms = min<uint32_t>(mqtt_backoff_ms * 2, MQTT_RETRY_MAX_MS);
     }
@@ -352,16 +358,15 @@ void setup()
 {
     /* A large RX buffer rides out the short stalls of Wi-Fi / TCP calls:
      * 4096 bytes is ~350 ms of link traffic at 115200 baud. */
-    Serial.setRxBufferSize(4096);
-    Serial.begin(LINK_BAUD);
-#if USE_SERIAL_SWAP
-    Serial.swap();   /* RX = GPIO13 (D7), TX = GPIO15 (D8) */
-#endif
+    link.setRxBufferSize(4096);
+    link.begin(LINK_BAUD);
+    link.swap();   /* RX = GPIO13 (D7), TX = GPIO15 (D8); frees GPIO1/3 */
 
-#if DEBUG_ENABLED && USE_SERIAL_SWAP
-    Serial1.begin(DEBUG_BAUD);
-    Serial1.println();
-    Serial1.printf("AERIS ESP8266 bridge %s, device %s\n", FW_VERSION, DEVICE_ID);
+#if DEBUG_ENABLED
+    dbg.begin(DEBUG_BAUD, SWSERIAL_8N1, -1, DEBUG_TX_PIN);
+    dbg.println();
+    dbg.printf("AERIS ESP8266 bridge %s, device %s\r\n", FW_VERSION, DEVICE_ID);
+    DBG("link: hardware UART0 on D7/D8 @ %d baud\r\n", LINK_BAUD);
 #endif
 
     WiFi.persistent(false);
@@ -369,7 +374,7 @@ void setup()
     WiFi.setSleepMode(WIFI_NONE_SLEEP);   /* lower latency, steadier throughput */
     WiFi.setAutoReconnect(true);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    DBG("wifi: connecting to %s\n", WIFI_SSID);
+    DBG("wifi: connecting to %s\r\n", WIFI_SSID);
 
     mqtt.setServer(MQTT_HOST, MQTT_PORT);
     mqtt.setCallback(on_mqtt_message);
@@ -395,10 +400,10 @@ void loop()
         wifi_was_up = wifi_up;
         if (wifi_up) {
             wifi_connects++;
-            DBG("wifi: connected, ip=%s rssi=%d\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+            DBG("wifi: connected, ip=%s rssi=%d\r\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
             next_mqtt_try_ms = now;
         } else {
-            DBG("wifi: disconnected\n");
+            DBG("wifi: disconnected\r\n");
         }
     }
 
@@ -413,7 +418,7 @@ void loop()
     if ((int32_t)(now - next_esp_status_ms) >= 0) {
         next_esp_status_ms = now + ESP_STATUS_PERIOD_MS;
         publish_esp_status();
-        DBG("stat: ok=%lu bad=%lu pub=%lu drop=%lu mqtt=%d\n",
+        DBG("stat: ok=%lu bad=%lu pub=%lu drop=%lu mqtt=%d\r\n",
             (unsigned long)frames_ok, (unsigned long)frames_bad,
             (unsigned long)published, (unsigned long)dropped_offline, mqtt.connected());
     }

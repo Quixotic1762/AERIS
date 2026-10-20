@@ -7,14 +7,14 @@
 #define AERIS_ESP_CONFIG_H
 
 /* ---- Wi-Fi ---------------------------------------------------------- */
-#define WIFI_SSID          "Ashwin's CMF Nothing phone 2 pro"
-#define WIFI_PASSWORD      "123456789"
+#define WIFI_SSID          "NITU"
+#define WIFI_PASSWORD      "VIKAS@_25121986"
 
 /* ---- MQTT broker -----------------------------------------------------
  * Use the LAN IP of the computer running Mosquitto, NOT "localhost"
  * (on the ESP8266, localhost is the ESP8266 itself).
  */
-#define MQTT_HOST          "10.87.80.227"
+#define MQTT_HOST          "192.168.100.13"
 #define MQTT_PORT          1883
 #define MQTT_USER          "aeris"        /* "" if the broker allows anonymous */
 #define MQTT_PASSWORD      "aeris"
@@ -28,17 +28,18 @@
 #define TOPIC_ESP_STATUS   "aeris/status/esp"    /* this bridge (retained + last will) */
 #define TOPIC_COMMAND      "aeris/command"       /* forwarded to the STM32 */
 
-/* ---- UART link to STM32 ----------------------------------------------
- * 1 = call Serial.swap(): UART0 moves to GPIO13 (RX, D7) / GPIO15 (TX, D8).
- *     The USB-serial chip stays free and boot messages don't reach the
- *     STM32. Debug log goes to Serial1 (GPIO2 / D4, TX only).
- * 0 = use the default GPIO3 (RX) / GPIO1 (TX) pins. Unplug USB while
- *     running, and debug logging is disabled.
+/* ---- Debug log + STM32 link -----------------------------------------
+ * STM32 link: hardware UART0 (Serial), moved by Serial.swap() to
+ *            D7 = GPIO13 = RX  <- STM32 PA9  (USART1 TX)
+ *            D8 = GPIO15 = TX  -> STM32 PA10 (USART1 RX)
+ * Debug log: transmit-only SoftwareSerial on GPIO1, the pin wired to the
+ *            board's USB-serial chip, so it shows in the Serial Monitor.
+ * LINK_BAUD must match USART1 on the STM32 (main.c).
  */
 #define LINK_BAUD          115200
-#define USE_SERIAL_SWAP    1
 #define DEBUG_ENABLED      1
 #define DEBUG_BAUD         115200
+#define DEBUG_TX_PIN       1       /* GPIO1 = USB-serial chip RX */
 
 /* ---- Timing --------------------------------------------------------- */
 #define HEARTBEAT_PERIOD_MS     1000   /* heartbeat frame to STM32 */

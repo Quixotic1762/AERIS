@@ -120,7 +120,7 @@ To see the raw frames, connect a USB-UART adapter's RX pin to PA9 (115200 8N1).
 
    Upload works over USB with the STM32 wires connected, because the sketch moves the STM32 link to D7/D8 with `Serial.swap()`. If an upload fails, disconnect D8 and try again.
 
-**Debug log:** with `USE_SERIAL_SWAP 1`, the log goes out on **D4 (GPIO2)** at 115200 baud and needs a separate USB-UART adapter to read; the Arduino Serial Monitor shows nothing. You can also watch MQTT instead:
+**Debug log:** printed over USB (a transmit-only software serial on GPIO1, the USB chip's pin). Open the Arduino Serial Monitor at 115200 baud (`DEBUG_BAUD`). Set `DEBUG_ENABLED 0` in `config.h` to turn it off. You can also watch MQTT instead:
 
 ```bash
 mosquitto_sub -h localhost -u aeris -P change-me -t 'aeris/#' -v
